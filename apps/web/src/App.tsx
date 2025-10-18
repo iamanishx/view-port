@@ -215,6 +215,50 @@ function App() {
     console.log('Removed element', elementId, 'from group', groupId);
   }, [storedGroups, saveGroupsToStorage]);
 
+  // Remove the whole group and its children
+  const removeGroupAndChildren = useCallback((groupId: string) => {
+    if (!excalidrawAPIRef.current) return;
+
+    // Get all elements from the scene
+    const allElements = excalidrawAPIRef.current.getSceneElements();
+    // Get all element ids in the group
+    const elementIds = storedGroups.get(groupId) || [];
+
+    // Remove groupId from all elements' groupIds
+    const updatedElements = allElements.map((el: any) => {
+      if (elementIds.includes(el.id)) {
+        return {
+          ...el,
+          groupIds: el.groupIds.filter((gId: string) => gId !== groupId)
+        };
+      }
+      return el;
+    });
+
+    // Update the scene
+    excalidrawAPIRef.current.updateScene({
+      elements: updatedElements,
+      appState: {
+        ...excalidrawAPIRef.current.getAppState(),
+        selectedElementIds: {}
+      }
+    });
+
+    // Remove the group from storedGroups
+    const updatedGroups = new Map(storedGroups);
+    updatedGroups.delete(groupId);
+    setStoredGroups(updatedGroups);
+    saveGroupsToStorage(updatedGroups);
+    // Also update UI state
+    setGroups(groups.filter((g) => g.id !== groupId));
+    setExpandedGroups((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(groupId);
+      return newSet;
+    });
+    console.log('Removed group', groupId, 'and its children');
+  }, [storedGroups, groups]);
+
   return (
     <div className="app-container">
       <h1>Excalidraw Example</h1>
@@ -345,6 +389,24 @@ function App() {
                         >
                           {isExpanded ? '▼' : '▶'}
                         </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeGroupAndChildren(group.id);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#d32f2f',
+                              cursor: 'pointer',
+                              fontSize: '16px',
+                              padding: '4px 8px',
+                              marginLeft: '4px',
+                            }}
+                            title="Remove group and its children"
+                          >
+                            🗑️
+                          </button>
                       </div>
                       {isExpanded && (
                         <div
