@@ -1,0 +1,40 @@
+.app-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-container h1 {
+  text-align: center;
+  padding: 1rem;
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.excalidraw-wrapper {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.excalidraw-wrapper > .excalidraw {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.app-container .excalidraw {
+  --color-primary: #fcc6d9;
+  --color-primary-darker: #f783ac;
+  --color-primary-darkest: #e64980;
+  --color-primary-light: #f2a9c4;
+}
+
+.app-container .excalidraw.theme--dark {
+  --color-primary: #d494aa;
+  --color-primary-darker: #d64c7e;
+  --color-primary-darkest: #e86e99;
+  --color-primary-light: #dcbec9;
+}
