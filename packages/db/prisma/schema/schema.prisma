@@ -9,3 +9,17 @@ datasource db {
   provider = "mongodb"
   url      = env("DATABASE_URL")
 }
+
+model ViewportObject {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  group_id      String
+  objects       Json[]
+  image_url     String?
+  user_id       String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@index([group_id])
+  @@index([user_id])
+  @@map("viewport_objects")
+}
