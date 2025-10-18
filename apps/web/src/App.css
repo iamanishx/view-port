@@ -17,6 +17,7 @@
   min-width: 0;
   display: flex;
   overflow: hidden;
+  position: relative;
 }
 
 .excalidraw-wrapper > .excalidraw {
