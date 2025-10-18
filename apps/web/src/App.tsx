@@ -17,6 +17,7 @@ function App() {
   const [showGroupsPane, setShowGroupsPane] = useState(false);
   const [groups, setGroups] = useState<any[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [addToGroupId, setAddToGroupId] = useState<string | null>(null);
   const [storedGroups, setStoredGroups] = useState<Map<string, string[]>>(new Map());
   const excalidrawAPIRef = useRef<any>(null);
 
@@ -215,6 +216,50 @@ function App() {
     console.log('Removed element', elementId, 'from group', groupId);
   }, [storedGroups, saveGroupsToStorage]);
 
+  // Remove the whole group and its children
+  const removeGroupAndChildren = useCallback((groupId: string) => {
+    if (!excalidrawAPIRef.current) return;
+
+    // Get all elements from the scene
+    const allElements = excalidrawAPIRef.current.getSceneElements();
+    // Get all element ids in the group
+    const elementIds = storedGroups.get(groupId) || [];
+
+    // Remove groupId from all elements' groupIds
+    const updatedElements = allElements.map((el: any) => {
+      if (elementIds.includes(el.id)) {
+        return {
+          ...el,
+          groupIds: el.groupIds.filter((gId: string) => gId !== groupId)
+        };
+      }
+      return el;
+    });
+
+    // Update the scene
+    excalidrawAPIRef.current.updateScene({
+      elements: updatedElements,
+      appState: {
+        ...excalidrawAPIRef.current.getAppState(),
+        selectedElementIds: {}
+      }
+    });
+
+    // Remove the group from storedGroups
+    const updatedGroups = new Map(storedGroups);
+    updatedGroups.delete(groupId);
+    setStoredGroups(updatedGroups);
+    saveGroupsToStorage(updatedGroups);
+    // Also update UI state
+    setGroups(groups.filter((g) => g.id !== groupId));
+    setExpandedGroups((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(groupId);
+      return newSet;
+    });
+    console.log('Removed group', groupId, 'and its children');
+  }, [storedGroups, groups]);
+
   return (
     <div className="app-container">
       <h1>Excalidraw Example</h1>
@@ -224,6 +269,48 @@ function App() {
           initialData={initialData}
           onChange={(elements, state) => {
             scheduleSave({ elements, state });
+            // If addToGroupId is set, check for new selection
+            if (addToGroupId && excalidrawAPIRef.current) {
+              const selectedIds = state.selectedElementIds || {};
+              const selectedElementId = Object.keys(selectedIds)[0];
+              if (selectedElementId) {
+                // Add selected element to group
+                const allElements = excalidrawAPIRef.current.getSceneElements();
+                const elementToUpdate = allElements.find((el: any) => el.id === selectedElementId);
+                if (elementToUpdate) {
+                  // Add groupId to element's groupIds
+                  const updatedElement = {
+                    ...elementToUpdate,
+                    groupIds: Array.from(new Set([...(elementToUpdate.groupIds || []), addToGroupId]))
+                  };
+                  // Update elements array
+                  const updatedElements = allElements.map((el: any) =>
+                    el.id === selectedElementId ? updatedElement : el
+                  );
+                  excalidrawAPIRef.current.updateScene({ elements: updatedElements });
+                  // Update storedGroups
+                  const updatedGroups = new Map(storedGroups);
+                  const elementIds = updatedGroups.get(addToGroupId) || [];
+                  if (!elementIds.includes(selectedElementId)) {
+                    updatedGroups.set(addToGroupId, [...elementIds, selectedElementId]);
+                  }
+                  setStoredGroups(updatedGroups);
+                  saveGroupsToStorage(updatedGroups);
+                  // Refresh groups display
+                  const groupsList = Array.from(updatedGroups.entries()).map(([id, elementIds]) => {
+                    const groupElements = updatedElements.filter((el: any) => elementIds.includes(el.id));
+                    return {
+                      id,
+                      elementIds,
+                      elements: groupElements,
+                      count: groupElements.length
+                    };
+                  });
+                  setGroups(groupsList);
+                  setAddToGroupId(null); // Exit add mode
+                }
+              }
+            }
           }}
           renderTopRightUI={() => (
             <div style={{ display: 'flex', gap: '8px', marginRight: '8px' }}>
@@ -241,21 +328,6 @@ function App() {
                 title="Show Groups"
               >
                 G
-              </button>
-              <button
-                onClick={handleServeButtonClick}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  backgroundColor: '#fff',
-                }}
-                title="Serve"
-              >
-                S
               </button>
             </div>
           )}
@@ -344,6 +416,61 @@ function App() {
                           }}
                         >
                           {isExpanded ? '▼' : '▶'}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAddToGroupId(group.id);
+                            // Optionally focus canvas here
+                          }}
+                          style={{
+                            background: addToGroupId === group.id ? '#e0e0e0' : 'none',
+                            border: 'none',
+                            color: '#388e3c',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            padding: '4px 8px',
+                            marginLeft: '4px',
+                          }}
+                          title="Add element to group"
+                        >
+                          ➕
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeGroupAndChildren(group.id);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#d32f2f',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            padding: '4px 8px',
+                            marginLeft: '4px',
+                          }}
+                          title="Remove group and its children"
+                        >
+                          🗑️
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Export functionality to be added later
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#1976d2',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            padding: '4px 8px',
+                            marginLeft: '4px',
+                          }}
+                          title="Export group"
+                        >
+                          ⬇️
                         </button>
                       </div>
                       {isExpanded && (
