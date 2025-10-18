@@ -22,23 +22,23 @@ const config: runtime.GetPrismaClientConfig = {
       "value": "prisma-client"
     },
     "output": {
-      "value": "/home/iamneo/psoc/view-port/packages/db/prisma/generated",
+      "value": "/home/manish/view-port/packages/db/prisma/generated",
       "fromEnvVar": null
     },
     "config": {
-      "runtime": "nodejs",
       "moduleFormat": "esm",
+      "runtime": "nodejs",
       "engineType": "library"
     },
     "binaryTargets": [
       {
         "fromEnvVar": null,
-        "value": "rhel-openssl-3.0.x",
+        "value": "debian-openssl-3.0.x",
         "native": true
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "/home/iamneo/psoc/view-port/packages/db/prisma/schema/schema.prisma",
+    "sourceFilePath": "/home/manish/view-port/packages/db/prisma/schema/schema.prisma",
     "isCustomOutput": true
   },
   "relativePath": "../schema",

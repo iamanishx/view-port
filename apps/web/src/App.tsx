@@ -1,15 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import uploadToPresignedUrl, { createPresignedUrl } from './utils/upload';
+import { Excalidraw, exportToBlob } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import './App.css'
 
 const STORAGE_KEY = "view-port";
 const GROUPS_STORAGE_KEY = "view-port-groups";
 
-interface StoredGroup {
-  id: string;
-  elementIds: string[];
-}
 
 function App() {
   const [initialData, setInitialData] = useState<any>(undefined);
@@ -32,7 +30,6 @@ function App() {
       }
     }
 
-    // Load stored groups
     const groupsData = localStorage.getItem(GROUPS_STORAGE_KEY);
     if (groupsData) {
       try {
@@ -66,11 +63,9 @@ function App() {
 
   const handleGroupButtonClick = useCallback(() => {
     if (!showGroupsPane && excalidrawAPIRef.current) {
-      // Refresh groups when opening the pane
       const elements = excalidrawAPIRef.current.getSceneElements();
       const currentGroupsMap = new Map<string, string[]>();
       
-      // Get current groups from canvas
       elements.forEach((element: any) => {
         if (element.groupIds && element.groupIds.length > 0) {
           element.groupIds.forEach((groupId: string) => {
@@ -82,17 +77,14 @@ function App() {
         }
       });
       
-      // Merge with stored groups to preserve empty groups
       const mergedGroups = new Map(storedGroups);
       currentGroupsMap.forEach((elementIds, groupId) => {
         mergedGroups.set(groupId, elementIds);
       });
       
-      // Update stored groups
       setStoredGroups(mergedGroups);
       saveGroupsToStorage(mergedGroups);
       
-      // Build groups list with full element data
       const groupsList = Array.from(mergedGroups.entries()).map(([id, elementIds]) => {
         const groupElements = elements.filter((el: any) => elementIds.includes(el.id));
         return {
@@ -109,9 +101,99 @@ function App() {
     setShowGroupsPane(!showGroupsPane);
   }, [showGroupsPane, storedGroups, saveGroupsToStorage]);
 
-  const handleServeButtonClick = useCallback(() => {
-    // Does nothing for now
-  }, []);
+  const handleExportGroup = useCallback(async (groupId: string) => {
+    if (!excalidrawAPIRef.current) return;
+
+    const allElements = excalidrawAPIRef.current.getSceneElements();
+    const groupElementIds = storedGroups.get(groupId) || [];
+    const groupElements = allElements.filter((el: any) => groupElementIds.includes(el.id));
+    if (groupElements.length === 0) {
+      console.warn('No elements in group', groupId);
+      return;
+    }
+
+    try {
+      // Use the standalone exportToBlob utility function from Excalidraw
+      const appState = excalidrawAPIRef.current.getAppState();
+      const files = excalidrawAPIRef.current.getFiles ? excalidrawAPIRef.current.getFiles() : null;
+      
+      const blob = await exportToBlob({
+        elements: groupElements,
+        mimeType: 'image/png',
+        appState: {
+          ...appState,
+          exportBackground: true,
+          exportWithDarkMode: false,
+          viewBackgroundColor: '#ffffff'
+        },
+        files: files,
+      });
+
+      if (!blob) {
+        console.warn('Failed to produce export blob for group', groupId);
+        return;
+      }
+
+      // Upload to presigned URL
+      const filename = `group-${groupId}.png`;
+      const userId = 'anonymous';
+      const presigned = await createPresignedUrl(filename, groupId, userId, blob.type || 'image/png');
+      
+      if (!presigned) {
+        console.warn('Could not get presigned URL');
+        return;
+      }
+
+      const uploadUrl = presigned.uploadUrl ?? presigned;
+      const publicUrl = presigned.publicUrl ?? null;
+
+      const ok = await uploadToPresignedUrl(uploadUrl, blob, blob.type || 'image/png');
+      
+      if (!ok) {
+        console.warn('Upload failed');
+        return;
+      }
+      
+      console.log("Uploaded successfully!")
+      
+      if (publicUrl && typeof publicUrl === 'string') {
+        const now = Date.now();
+        const imgEl = {
+          id: `img-${now}`,
+          type: 'image',
+          x: groupElements[0].x + 20,
+          y: groupElements[0].y + 20,
+          width: groupElements.reduce((acc:any, e:any) => acc + (e.width || 100), 0) / groupElements.length || 200,
+          height: groupElements.reduce((acc:any, e:any) => acc + (e.height || 100), 0) / groupElements.length || 200,
+          angle: 0,
+          backgroundColor: 'transparent',
+          strokeColor: '#000000',
+          strokeWidth: 1,
+          seed: Math.floor(Math.random()*100000),
+          version: 1,
+          versionNonce: Math.floor(Math.random()*1000000),
+          isDeleted: false,
+          link: null,
+          opacity: 100,
+          fileId: null,
+          text: '',
+          status: 'stored',
+          scale: 1,
+          xOffset: 0,
+          yOffset: 0,
+          mimeType: blob.type || 'image/png',
+          src: publicUrl,
+        } as any;
+
+        const newElements = [...allElements, imgEl];
+        excalidrawAPIRef.current.updateScene({ elements: newElements });
+      } else {
+        console.log('Uploaded group to presigned URL, no public URL returned');
+      }
+    } catch (e) {
+      console.warn('Export/upload failed', e);
+    }
+  }, [storedGroups]);
 
   const toggleGroupExpansion = useCallback((groupId: string) => {
     setExpandedGroups(prev => {
@@ -133,10 +215,8 @@ function App() {
       element.groupIds && element.groupIds.includes(groupId)
     );
     
-    // Get the IDs of elements in this group
     const elementIds = groupElements.map((el: any) => el.id);
     
-    // Update the app state to select these elements
     excalidrawAPIRef.current.updateScene({
       appState: {
         selectedElementIds: elementIds.reduce((acc: any, id: string) => {
@@ -152,10 +232,8 @@ function App() {
   const removeElementFromGroup = useCallback((groupId: string, elementId: string) => {
     if (!excalidrawAPIRef.current) return;
 
-    // Get all elements from the scene
     const allElements = excalidrawAPIRef.current.getSceneElements();
     
-    // Find the element to remove from the group
     const elementToUpdate = allElements.find((el: any) => el.id === elementId);
     
     if (!elementToUpdate) {
@@ -163,22 +241,18 @@ function App() {
       return;
     }
 
-    // Get current app state to check selections
     const appState = excalidrawAPIRef.current.getAppState();
     const currentSelectedIds = appState.selectedElementIds || {};
 
-    // Remove the groupId from the element's groupIds array
     const updatedElement = {
       ...elementToUpdate,
       groupIds: elementToUpdate.groupIds.filter((gId: string) => gId !== groupId)
     };
 
-    // Update the scene with the modified element
     const updatedElements = allElements.map((el: any) => 
       el.id === elementId ? updatedElement : el
     );
 
-    // Update selection to remove the deleted element if it's currently selected
     const newSelectedIds = { ...currentSelectedIds };
     if (newSelectedIds[elementId]) {
       delete newSelectedIds[elementId];
@@ -191,7 +265,6 @@ function App() {
       }
     });
 
-    // Update stored groups
     const updatedGroups = new Map(storedGroups);
     const elementIds = updatedGroups.get(groupId) || [];
     const newElementIds = elementIds.filter(id => id !== elementId);
@@ -200,7 +273,6 @@ function App() {
     setStoredGroups(updatedGroups);
     saveGroupsToStorage(updatedGroups);
     
-    // Refresh the groups display
     const elements = excalidrawAPIRef.current.getSceneElements();
     const groupsList = Array.from(updatedGroups.entries()).map(([id, elementIds]) => {
       const groupElements = elements.filter((el: any) => elementIds.includes(el.id));
@@ -216,16 +288,12 @@ function App() {
     console.log('Removed element', elementId, 'from group', groupId);
   }, [storedGroups, saveGroupsToStorage]);
 
-  // Remove the whole group and its children
   const removeGroupAndChildren = useCallback((groupId: string) => {
     if (!excalidrawAPIRef.current) return;
 
-    // Get all elements from the scene
     const allElements = excalidrawAPIRef.current.getSceneElements();
-    // Get all element ids in the group
     const elementIds = storedGroups.get(groupId) || [];
 
-    // Remove groupId from all elements' groupIds
     const updatedElements = allElements.map((el: any) => {
       if (elementIds.includes(el.id)) {
         return {
@@ -236,7 +304,6 @@ function App() {
       return el;
     });
 
-    // Update the scene
     excalidrawAPIRef.current.updateScene({
       elements: updatedElements,
       appState: {
@@ -245,12 +312,10 @@ function App() {
       }
     });
 
-    // Remove the group from storedGroups
     const updatedGroups = new Map(storedGroups);
     updatedGroups.delete(groupId);
     setStoredGroups(updatedGroups);
     saveGroupsToStorage(updatedGroups);
-    // Also update UI state
     setGroups(groups.filter((g) => g.id !== groupId));
     setExpandedGroups((prev) => {
       const newSet = new Set(prev);
@@ -258,7 +323,7 @@ function App() {
       return newSet;
     });
     console.log('Removed group', groupId, 'and its children');
-  }, [storedGroups, groups]);
+  }, [storedGroups, groups, saveGroupsToStorage]);
 
   return (
     <div className="app-container">
@@ -269,26 +334,21 @@ function App() {
           initialData={initialData}
           onChange={(elements, state) => {
             scheduleSave({ elements, state });
-            // If addToGroupId is set, check for new selection
             if (addToGroupId && excalidrawAPIRef.current) {
               const selectedIds = state.selectedElementIds || {};
               const selectedElementId = Object.keys(selectedIds)[0];
               if (selectedElementId) {
-                // Add selected element to group
                 const allElements = excalidrawAPIRef.current.getSceneElements();
                 const elementToUpdate = allElements.find((el: any) => el.id === selectedElementId);
                 if (elementToUpdate) {
-                  // Add groupId to element's groupIds
                   const updatedElement = {
                     ...elementToUpdate,
                     groupIds: Array.from(new Set([...(elementToUpdate.groupIds || []), addToGroupId]))
                   };
-                  // Update elements array
                   const updatedElements = allElements.map((el: any) =>
                     el.id === selectedElementId ? updatedElement : el
                   );
                   excalidrawAPIRef.current.updateScene({ elements: updatedElements });
-                  // Update storedGroups
                   const updatedGroups = new Map(storedGroups);
                   const elementIds = updatedGroups.get(addToGroupId) || [];
                   if (!elementIds.includes(selectedElementId)) {
@@ -296,7 +356,6 @@ function App() {
                   }
                   setStoredGroups(updatedGroups);
                   saveGroupsToStorage(updatedGroups);
-                  // Refresh groups display
                   const groupsList = Array.from(updatedGroups.entries()).map(([id, elementIds]) => {
                     const groupElements = updatedElements.filter((el: any) => elementIds.includes(el.id));
                     return {
@@ -307,7 +366,7 @@ function App() {
                     };
                   });
                   setGroups(groupsList);
-                  setAddToGroupId(null); // Exit add mode
+                  setAddToGroupId(null);
                 }
               }
             }
@@ -421,7 +480,6 @@ function App() {
                           onClick={(e) => {
                             e.stopPropagation();
                             setAddToGroupId(group.id);
-                            // Optionally focus canvas here
                           }}
                           style={{
                             background: addToGroupId === group.id ? '#e0e0e0' : 'none',
@@ -457,7 +515,7 @@ function App() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Export functionality to be added later
+                            handleExportGroup(group.id);
                           }}
                           style={{
                             background: 'none',

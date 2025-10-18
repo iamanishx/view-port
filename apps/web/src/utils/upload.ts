@@ -16,14 +16,14 @@ export async function uploadToPresignedUrl(presignedUrl: string, blob: Blob, con
 
 export default uploadToPresignedUrl;
 
-export async function createPresignedUrl(filename: string, contentType = 'application/octet-stream') {
+export async function createPresignedUrl(fileName: string, group_id:string, user_id: string, fileType = 'application/octet-stream') {
   try {
     const res = await fetch('http://localhost:3000/presigned', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ filename, contentType }),
+      body: JSON.stringify({ fileName, fileType, group_id, user_id }),
     });
 
     if (!res.ok) {
@@ -32,12 +32,14 @@ export async function createPresignedUrl(filename: string, contentType = 'applic
     }
 
     const data = await res.json();
-    const url = data?.url ?? data?.presignedUrl ?? null;
-    if (!url || typeof url !== 'string') {
+    // Support multiple shapes from backend: { url }, { presignedUrl }, { uploadUrl }
+    const uploadUrl = data?.url ?? data?.presignedUrl ?? data?.uploadUrl ?? null;
+    const publicUrl = data?.publicUrl ?? data?.objectUrl ?? data?.public_url ?? null;
+    if (!uploadUrl || typeof uploadUrl !== 'string') {
       console.warn('Presigned url missing or invalid in response', data);
       return null;
     }
-    return url;
+    return { uploadUrl, publicUrl };
   } catch (e) {
     console.warn('Error requesting presigned url', e);
     return null;
