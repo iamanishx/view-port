@@ -45,3 +45,25 @@ export async function createPresignedUrl(fileName: string, group_id:string, user
     return null;
   }
 }
+
+export async function getPublicUrl(user_id: string, group_id: string) {
+  try {
+    const res = await fetch(`http://localhost:3000/${user_id}/${group_id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      console.warn('Failed to get public url, status:', res.status);
+      return null;
+    }
+
+    const data = await res.json();
+    return data?.publicUrl ?? null;
+  } catch (e) {
+    console.warn('Error requesting public url', e);
+    return null;
+  }
+}

@@ -39,3 +39,14 @@
   --color-primary-darkest: #e86e99;
   --color-primary-light: #dcbec9;
 }
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

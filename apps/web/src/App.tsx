@@ -1,12 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useRef, useState } from "react";
-import uploadToPresignedUrl, { createPresignedUrl } from './utils/upload';
+import uploadToPresignedUrl, { createPresignedUrl, getPublicUrl } from './utils/upload';
 import { Excalidraw, exportToBlob } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import './App.css'
 
 const STORAGE_KEY = "view-port";
 const GROUPS_STORAGE_KEY = "view-port-groups";
+
+interface Toast {
+  id: number;
+  message: string;
+  publicUrl: string;
+}
 
 
 function App() {
@@ -18,6 +24,7 @@ function App() {
   const [addToGroupId, setAddToGroupId] = useState<string | null>(null);
   const [storedGroups, setStoredGroups] = useState<Map<string, string[]>>(new Map());
   const excalidrawAPIRef = useRef<any>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
     const s = localStorage.getItem(STORAGE_KEY);
@@ -59,6 +66,29 @@ function App() {
   const saveGroupsToStorage = useCallback((groupsMap: Map<string, string[]>) => {
     const groupsObj = Object.fromEntries(groupsMap);
     localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groupsObj));
+  }, []);
+
+  const showToast = useCallback((message: string, publicUrl: string) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, publicUrl }]);
+    
+    // Auto-remove after 15 seconds
+    setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== id));
+    }, 15000);
+  }, []);
+
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      console.log('Copied to clipboard:', text);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  }, []);
+
+  const removeToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
   }, []);
 
   const handleGroupButtonClick = useCallback(() => {
@@ -155,6 +185,13 @@ function App() {
       }
       
       console.log("Uploaded successfully!")
+
+      // Fetch the public URL from the server
+      const fetchedPublicUrl = await getPublicUrl(userId, groupId);
+      
+      if (fetchedPublicUrl) {
+        showToast('Export successful!', fetchedPublicUrl);
+      }
       
       if (publicUrl && typeof publicUrl === 'string') {
         const now = Date.now();
@@ -193,7 +230,7 @@ function App() {
     } catch (e) {
       console.warn('Export/upload failed', e);
     }
-  }, [storedGroups]);
+  }, [storedGroups, showToast]);
 
   const toggleGroupExpansion = useCallback((groupId: string) => {
     setExpandedGroups(prev => {
@@ -590,6 +627,77 @@ function App() {
             </div>
           </div>
         )}
+      </div>
+      {/* Toast Notifications */}
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          zIndex: 10000,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+        }}
+      >
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            style={{
+              backgroundColor: '#323232',
+              color: 'white',
+              padding: '16px 20px',
+              borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              minWidth: '300px',
+              maxWidth: '400px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              animation: 'slideIn 0.3s ease-out',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 'bold', fontSize: '14px' }}>{toast.message}</span>
+              <button
+                onClick={() => removeToast(toast.id)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '20px',
+                  padding: '0',
+                  lineHeight: '1',
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <button
+              onClick={() => copyToClipboard(toast.publicUrl)}
+              style={{
+                backgroundColor: '#1976d2',
+                color: 'white',
+                border: 'none',
+                padding: '10px 16px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+                transition: 'background-color 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#1565c0';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#1976d2';
+              }}
+            >
+              📋 Copy Public URL
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   )
